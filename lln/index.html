@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Law of Large Numbers Lab</title>
+<meta name="description" content="Flip a coin thousands of times and watch the running proportion settle down while the raw count difference does not.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="../assets/lab.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../">← All applets</a>
+    <h1>Law of Large Numbers Lab</h1>
+    <p>Flip a coin over and over. The share of heads wanders at first, then settles near the true probability p. Start a new run to see that every run settles, each along its own path.</p>
+  </header>
+
+  <div class="bench">
+    <aside class="panel controls" aria-label="Controls">
+      <div>
+        <p class="label">1 · Chance of a success</p>
+        <div class="choices" id="ps" style="grid-template-columns:1fr"></div>
+      </div>
+      <div>
+        <p class="label">2 · Flip</p>
+        <div class="draws">
+          <button class="draw" id="f10" type="button">+10</button>
+          <button class="draw" id="f100" type="button">+100</button>
+          <button class="draw" id="f1000" type="button">+1,000</button>
+        </div>
+        <p class="hint">Each run goes up to 10,000 flips.</p>
+        <div class="row2"><button class="ghost" id="newrun" type="button">New run</button><button class="ghost" id="clear" type="button">Clear all runs</button></div>
+      </div>
+    </aside>
+
+    <section class="plots">
+      <div class="panel plot">
+        <h2>Proportion of successes so far</h2>
+        <p class="sub" id="propsub"></p>
+        <canvas id="cProp" height="300" aria-label="Running proportion of successes against number of flips, log scale"></canvas>
+        <div class="legend"><span><i style="background:var(--pop)"></i>Current run</span><span><i style="background:var(--muted)"></i>Earlier runs</span><span>Dashed line: true p</span></div>
+        <div class="readout four">
+          <div class="stat"><div class="k">Flips (current run)</div><div class="v" id="flips">0</div><div class="t" id="runno"></div></div>
+          <div class="stat"><div class="k">Successes</div><div class="v" id="heads">0</div><div class="t" id="expected"></div></div>
+          <div class="stat hit"><div class="k">Proportion</div><div class="v" id="prop">–</div><div class="t" id="propT"></div></div>
+          <div class="stat hit"><div class="k">Successes − expected</div><div class="v" id="diff">–</div><div class="t">does not shrink</div></div>
+        </div>
+      </div>
+      <div class="panel plot">
+        <h2>Successes minus the expected count</h2>
+        <p class="sub">The gap between the count and n·p keeps wandering, and tends to grow, even while the proportion settles. Number of flips on a log scale.</p>
+        <canvas id="cDiff" height="170" aria-label="Number of successes minus n times p against number of flips"></canvas>
+      </div>
+    </section>
+  </div>
+
+  <section class="notes panel">
+    <div><h3>Proportions settle</h3><p>After a few flips the share of heads can be far from p. After thousands, it stays close. That is the law of large numbers.</p></div>
+    <div><h3>Counts do not even out</h3><p>The second chart shows that the number of extra heads does not shrink back to 0. It grows roughly like <span class="mono">√n</span>, but n grows faster, so the proportion still settles.</p></div>
+    <div><h3>The coin has no memory</h3><p>After a run of tails, heads is not "due". Early streaks are not corrected. They are swamped by the many flips that follow.</p></div>
+  </section>
+</div>
+
+<script src="../assets/lab.js"></script>
+<script>
+(function () {
+  const L = Lab, $ = id => document.getElementById(id);
+  const MAXN = 10000, MAXRUNS = 6, PAD = { l: 40, r: 14, t: 14, b: 26 };
+  const PS = [{ value: '0.5', label: 'Fair coin, p = 0.5' }, { value: '0.3', label: 'Biased coin, p = 0.3' }, { value: '0.1667', label: 'Rolling a six, p = 1/6' }];
+  const state = { p: 0.5, pKey: '0.5', runs: [], job: 0 };
+  const cur = () => state.runs[state.runs.length - 1];
+
+  function newRun() { state.runs.push({ cum: [] }); if (state.runs.length > MAXRUNS) state.runs.shift(); }
+  function flip(k) {
+    const r = cur(); let c = r.cum.length ? r.cum[r.cum.length - 1] : 0;
+    for (let i = 0; i < k && r.cum.length < MAXN; i++) { if (Math.random() < state.p) c++; r.cum.push(c); }
+  }
+  function xmax() { const m = Math.max(10, ...state.runs.map(r => r.cum.length)); return Math.pow(10, Math.ceil(Math.log10(m))); }
+
+  function logAxis(ctx, w, h, C, xm) {
+    const lx = v => PAD.l + Math.log10(v) / Math.log10(xm) * (w - PAD.l - PAD.r);
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(PAD.l, h - PAD.b + 0.5); ctx.lineTo(w - PAD.r, h - PAD.b + 0.5); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '11px ' + C.mono; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let t = 1; t <= xm; t *= 10) { const px = lx(t); ctx.beginPath(); ctx.moveTo(px + 0.5, h - PAD.b); ctx.lineTo(px + 0.5, h - PAD.b + 4); ctx.stroke(); ctx.textAlign = t === xm ? 'right' : 'center'; ctx.fillText(t.toLocaleString(), t === xm ? px + 2 : px, h - PAD.b + 7); }
+    return lx;
+  }
+  function path(ctx, lx, y, run, fn, color, alpha, width) {
+    if (!run.cum.length) return;
+    ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = width; ctx.beginPath();
+    const n = run.cum.length, step = Math.max(1, Math.floor(n / 2000));
+    for (let i = 0; i < n; i += (i < 200 ? 1 : step)) { const px = lx(i + 1), py = y(fn(run.cum[i], i + 1)); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.lineTo(lx(n), y(fn(run.cum[n - 1], n)));
+    ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = 1;
+  }
+
+  function drawProp() {
+    const C = L.colors(), { ctx, w, h } = L.setup($('cProp')), xm = xmax(), lx = logAxis(ctx, w, h, C, xm);
+    const y = v => PAD.t + (1 - v) * (h - PAD.t - PAD.b);
+    ctx.fillStyle = C.muted; ctx.font = '11px ' + C.mono; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    [0, 0.25, 0.5, 0.75, 1].forEach(t => { ctx.fillText(t.toFixed(2), PAD.l - 6, y(t)); ctx.strokeStyle = C.rule; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.moveTo(PAD.l, y(t) + 0.5); ctx.lineTo(w - PAD.r, y(t) + 0.5); ctx.stroke(); ctx.globalAlpha = 1; });
+    ctx.save(); ctx.setLineDash([5, 4]); ctx.strokeStyle = C.mean; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(PAD.l, y(state.p)); ctx.lineTo(w - PAD.r, y(state.p)); ctx.stroke(); ctx.restore();
+    const fn = (c, n) => c / n;
+    state.runs.forEach((r, i) => { const last = i === state.runs.length - 1; path(ctx, lx, y, r, fn, last ? C.pop : C.muted, last ? 1 : 0.45, last ? 2.2 : 1.4); });
+    ctx.fillStyle = C.mean; ctx.font = '600 11px ' + C.mono; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('p = ' + (+state.p.toFixed(4)), w - PAD.r, y(state.p) - 4);
+  }
+
+  function drawDiff() {
+    const C = L.colors(), { ctx, w, h } = L.setup($('cDiff')), xm = xmax(), lx = logAxis(ctx, w, h, C, xm);
+    const fn = (c, n) => c - n * state.p;
+    let m = 5; state.runs.forEach(r => r.cum.forEach((c, i) => { m = Math.max(m, Math.abs(fn(c, i + 1))); }));
+    m = Math.ceil(m * 1.15);
+    const y = v => PAD.t + (1 - (v + m) / (2 * m)) * (h - PAD.t - PAD.b);
+    ctx.fillStyle = C.muted; ctx.font = '11px ' + C.mono; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    [-m, 0, m].forEach(t => ctx.fillText((t > 0 ? '+' : '') + t, PAD.l - 6, y(t)));
+    ctx.save(); ctx.setLineDash([5, 4]); ctx.strokeStyle = C.mean; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(PAD.l, y(0)); ctx.lineTo(w - PAD.r, y(0)); ctx.stroke(); ctx.restore();
+    state.runs.forEach((r, i) => { const last = i === state.runs.length - 1; path(ctx, lx, y, r, fn, last ? C.pop : C.muted, last ? 1 : 0.45, last ? 2.2 : 1.4); });
+  }
+
+  function updateText() {
+    const r = cur(), n = r.cum.length, c = n ? r.cum[n - 1] : 0;
+    $('flips').textContent = n.toLocaleString();
+    $('runno').textContent = 'run ' + state.runs.length + (state.runs.length > 1 ? ' (earlier runs in grey)' : '');
+    $('heads').textContent = c.toLocaleString();
+    $('expected').textContent = 'expected n·p = ' + (n * state.p).toFixed(1);
+    $('prop').textContent = n ? (c / n).toFixed(4) : '–';
+    $('propT').textContent = n ? 'off from p by ' + Math.abs(c / n - state.p).toFixed(4) : 'flip to start';
+    const d = c - n * state.p; $('diff').textContent = n ? (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(1) : '–';
+    $('propsub').textContent = 'Each flip is a success with probability p = ' + (+state.p.toFixed(4)) + '. The x-axis is on a log scale so the early flips are visible.';
+    syncP(state.pKey);
+    $('f10').disabled = $('f100').disabled = $('f1000').disabled = n >= MAXN;
+  }
+  function render() { updateText(); drawProp(); drawDiff(); }
+
+  function flipMany(k) {
+    const job = ++state.job;
+    if (k <= 10 || L.reduceMotion) { flip(k); render(); return; }
+    let left = k; const per = Math.max(1, Math.ceil(k / 30));
+    (function tick() { if (job !== state.job) return; const m = Math.min(per, left); flip(m); left -= m; render(); if (left > 0 && cur().cum.length < MAXN) requestAnimationFrame(tick); })();
+  }
+
+  const syncP = L.chips($('ps'), PS, state.pKey, v => { if (v !== state.pKey) { state.pKey = v; state.p = v === '0.1667' ? 1 / 6 : +v; state.job++; state.runs = []; newRun(); flip(500); render(); } });
+  $('f10').addEventListener('click', () => flipMany(10));
+  $('f100').addEventListener('click', () => flipMany(100));
+  $('f1000').addEventListener('click', () => flipMany(1000));
+  $('newrun').addEventListener('click', () => { state.job++; newRun(); render(); });
+  $('clear').addEventListener('click', () => { state.job++; state.runs = []; newRun(); render(); });
+  L.onRedraw(render, document.querySelector('.plots'));
+
+  // Open with two finished runs in grey and a current run in progress.
+  newRun(); flip(3000); newRun(); flip(3000); newRun(); flip(500);
+  render();
+})();
+</script>
+</body>
+</html>

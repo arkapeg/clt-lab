@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Least Squares Lab</title>
+<meta name="description" content="Tap to add points, drag them around, and watch the least-squares line, its residuals and r update.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="../assets/lab.css">
+<style>
+  #cPlot { touch-action: none; cursor: crosshair; }
+  #cPlot.dragging { cursor: grabbing; }
+  .eq { font-family: var(--f-mono); font-size: 1.05rem; font-weight: 600; margin: 10px 0 0; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../">← All applets</a>
+    <h1>Least Squares Lab</h1>
+    <p>Tap the plot to add a point. Drag a point to move it. The line is the least-squares regression line: of all straight lines, it makes the total area of the orange squares as small as possible.</p>
+  </header>
+
+  <div class="bench">
+    <aside class="panel controls" aria-label="Controls">
+      <div>
+        <p class="label">1 · Start from a data set</p>
+        <div class="choices" id="presets"></div>
+        <p class="hint" id="presetdesc"></p>
+      </div>
+      <div>
+        <p class="label">2 · Show on the plot</p>
+        <div class="stack">
+          <label class="check"><input type="checkbox" id="showLine" checked> Regression line</label>
+          <label class="check"><input type="checkbox" id="showRes" checked> Residuals (vertical gaps)</label>
+          <label class="check"><input type="checkbox" id="showSq"> Squared residuals</label>
+          <label class="check"><input type="checkbox" id="showMean" checked> Point of means (x̄, ȳ)</label>
+        </div>
+      </div>
+      <div>
+        <p class="label">3 · Edit points</p>
+        <label class="check"><input type="checkbox" id="removeMode"> Tap a point to remove it</label>
+        <div class="row2"><button class="ghost" id="undo" type="button">Undo last point</button><button class="ghost" id="clear" type="button">Clear all</button></div>
+      </div>
+    </aside>
+
+    <section class="plots">
+      <div class="panel plot">
+        <h2>Scatterplot</h2>
+        <p class="sub" id="plotsub"></p>
+        <canvas id="cPlot" height="420" aria-label="Scatterplot with the least-squares line. Tap to add points, drag to move them."></canvas>
+        <p class="eq" id="eq"></p>
+        <div class="readout four">
+          <div class="stat"><div class="k">Points</div><div class="v" id="npts">0</div><div class="t">need at least 2</div></div>
+          <div class="stat hit"><div class="k">Correlation r</div><div class="v" id="r">–</div><div class="t" id="rT"></div></div>
+          <div class="stat hit"><div class="k">R²</div><div class="v" id="r2">–</div><div class="t">share of y's variation explained</div></div>
+          <div class="stat"><div class="k">Sum of squared residuals</div><div class="v" id="sse">–</div><div class="t">total area of the squares</div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="notes panel">
+    <div><h3>Why "least squares"</h3><p>Turn on squared residuals and drag a point. The line shifts so the total area of the squares is as small as it can be. It always passes through the point of means (x̄, ȳ).</p></div>
+    <div><h3>Outliers pull the line</h3><p>Load "One outlier" and drag the lone point at the far right. A point with an extreme x value has a lot of leverage over the slope.</p></div>
+    <div><h3>r measures straight-line patterns only</h3><p>Load "Curved". There is a strong relationship, yet r is close to 0, because the pattern is not a straight line. Always look at the plot.</p></div>
+  </section>
+</div>
+
+<script src="../assets/lab.js"></script>
+<script>
+(function () {
+  const L = Lab, $ = id => document.getElementById(id);
+  const PAD = { l: 34, r: 14, t: 12, b: 28 }, MAXV = 10, HIT = 16;
+  function clamp(v) { return Math.min(MAXV - 0.05, Math.max(0.05, v)); }
+  const PRESETS = {
+    positive: { label: 'Positive trend', desc: 'Twenty points around a rising straight line.', make: r => Array.from({ length: 20 }, () => { const x = 0.6 + 8.8 * r(); return { x, y: clamp(1.5 + 0.7 * x + 0.9 * r.gauss()) }; }) },
+    outlier:  { label: 'One outlier', desc: 'The same rising trend, plus one unusual point at the far right.', make: r => { const pts = Array.from({ length: 15 }, () => { const x = 0.6 + 7 * r(); return { x, y: clamp(1.5 + 0.8 * x + 0.7 * r.gauss()) }; }); pts.push({ x: 9.4, y: 1.0 }); return pts; } },
+    none:     { label: 'No relationship', desc: 'Twenty points scattered at random.', make: r => Array.from({ length: 20 }, () => ({ x: 0.6 + 8.8 * r(), y: 1 + 8 * r() })) },
+    curved:   { label: 'Curved', desc: 'A strong pattern that is not a straight line.', make: r => Array.from({ length: 21 }, (_, i) => { const x = 0.5 + 9 * i / 20; return { x, y: clamp(9 - 0.33 * (x - 5) ** 2 + 0.35 * r.gauss()) }; }) }
+  };
+  const state = { preset: 'positive', pts: [], drag: -1 };
+
+  function load(key) { state.preset = key; state.pts = PRESETS[key].make(L.seeded(key.length * 7919 + 17)); render(); }
+
+  function fit() {
+    const p = state.pts, n = p.length; if (n < 2) return null;
+    let mx = 0, my = 0; p.forEach(q => { mx += q.x; my += q.y; }); mx /= n; my /= n;
+    let sxx = 0, sxy = 0, syy = 0; p.forEach(q => { sxx += (q.x - mx) ** 2; sxy += (q.x - mx) * (q.y - my); syy += (q.y - my) ** 2; });
+    if (sxx < 1e-12) return { n, mx, my, degenerate: true };
+    const b = sxy / sxx, a = my - b * mx, r = syy > 1e-12 ? sxy / Math.sqrt(sxx * syy) : NaN;
+    let sse = 0; p.forEach(q => { sse += (q.y - a - b * q.x) ** 2; });
+    return { n, mx, my, a, b, r, sse };
+  }
+
+  let geom = null;
+  function draw() {
+    const C = L.colors(), { ctx, w, h } = L.setup($('cPlot'));
+    const pw = w - PAD.l - PAD.r, ph = h - PAD.t - PAD.b;
+    const X = v => PAD.l + v / MAXV * pw, Y = v => PAD.t + (1 - v / MAXV) * ph;
+    geom = { X, Y, pw, ph, w, h };
+    // grid and axes
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 1; ctx.fillStyle = C.muted; ctx.font = '11px ' + C.mono;
+    for (let t = 0; t <= MAXV; t += 2) {
+      ctx.globalAlpha = t === 0 ? 1 : 0.5;
+      ctx.beginPath(); ctx.moveTo(X(t) + 0.5, PAD.t); ctx.lineTo(X(t) + 0.5, h - PAD.b); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(PAD.l, Y(t) + 0.5); ctx.lineTo(w - PAD.r, Y(t) + 0.5); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(String(t), X(t), h - PAD.b + 6);
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(String(t), PAD.l - 6, Y(t));
+    }
+    ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('x', w - PAD.r, h - PAD.b - 3);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('y', PAD.l + 4, PAD.t + 2);
+
+    const f = fit();
+    ctx.save(); ctx.beginPath(); ctx.rect(PAD.l, PAD.t, pw, ph); ctx.clip();
+    if (f && !f.degenerate) {
+      const sx = ph / MAXV; // pixels per y unit, used for both sides of each square
+      if ($('showSq').checked) {
+        state.pts.forEach(q => {
+          const yh = f.a + f.b * q.x, e = q.y - yh, side = Math.abs(e) * sx; if (side < 0.5) return;
+          const goRight = X(q.x) + side < w - PAD.r;
+          const x0 = goRight ? X(q.x) : X(q.x) - side, y0 = Math.min(Y(q.y), Y(yh));
+          ctx.fillStyle = C.meanSoft; ctx.fillRect(x0, y0, side, side); ctx.strokeStyle = C.mean; ctx.globalAlpha = 0.6; ctx.strokeRect(x0 + 0.5, y0 + 0.5, side, side); ctx.globalAlpha = 1;
+        });
+      }
+      if ($('showRes').checked) {
+        ctx.strokeStyle = C.mean; ctx.lineWidth = 2;
+        state.pts.forEach(q => { const yh = f.a + f.b * q.x; ctx.beginPath(); ctx.moveTo(X(q.x), Y(q.y)); ctx.lineTo(X(q.x), Y(yh)); ctx.stroke(); });
+        ctx.lineWidth = 1;
+      }
+      if ($('showLine').checked) {
+        ctx.strokeStyle = C.curve; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(X(0), Y(f.a)); ctx.lineTo(X(MAXV), Y(f.a + f.b * MAXV)); ctx.stroke(); ctx.lineWidth = 1;
+      }
+    }
+    ctx.restore();
+    state.pts.forEach((q, i) => {
+      ctx.beginPath(); ctx.arc(X(q.x), Y(q.y), i === state.drag ? 8 : 6, 0, Math.PI * 2);
+      ctx.fillStyle = C.pop; ctx.fill(); ctx.strokeStyle = C.surface; ctx.lineWidth = 1.5; ctx.stroke(); ctx.lineWidth = 1;
+    });
+    if (f && $('showMean').checked) {
+      const cx = X(f.mx), cy = Y(f.my), s = 7;
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(cx - s, cy - s); ctx.lineTo(cx + s, cy + s); ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s); ctx.stroke(); ctx.lineWidth = 1;
+      ctx.fillStyle = C.ink; ctx.font = '600 11px ' + C.mono; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText('(x̄, ȳ)', cx + 9, cy - 6);
+    }
+    return f;
+  }
+
+  function render() {
+    const f = draw(), sign = v => (v < 0 ? '− ' : '+ ') + Math.abs(v).toFixed(2);
+    $('npts').textContent = state.pts.length;
+    $('presetdesc').textContent = PRESETS[state.preset] ? PRESETS[state.preset].desc : '';
+    syncPreset(state.preset);
+    if (f && !f.degenerate) {
+      $('eq').textContent = 'ŷ = ' + f.a.toFixed(2) + ' ' + sign(f.b) + '·x';
+      $('r').textContent = Number.isFinite(f.r) ? f.r.toFixed(3) : '–';
+      const ar = Math.abs(f.r);
+      $('rT').textContent = !Number.isFinite(f.r) ? 'y has no spread' : (ar >= 0.8 ? 'strong' : ar >= 0.5 ? 'moderate' : ar >= 0.2 ? 'weak' : 'little or no') + ' linear relationship';
+      $('r2').textContent = Number.isFinite(f.r) ? (100 * f.r * f.r).toFixed(1) + '%' : '–';
+      $('sse').textContent = f.sse.toFixed(2);
+      $('plotsub').textContent = 'Slope ' + f.b.toFixed(2) + ': each 1-unit increase in x goes with a ' + Math.abs(f.b).toFixed(2) + '-unit ' + (f.b >= 0 ? 'increase' : 'decrease') + ' in predicted y.';
+    } else {
+      $('eq').textContent = state.pts.length < 2 ? 'Add at least two points to fit a line.' : 'The points need different x values to fit a line.';
+      ['r', 'r2', 'sse'].forEach(id => { $(id).textContent = '–'; }); $('rT').textContent = '';
+      $('plotsub').textContent = 'Tap anywhere on the grid to add a point.';
+    }
+  }
+
+  // ----- Pointer interaction -----
+  const cv = $('cPlot');
+  function toData(ev) {
+    const rect = cv.getBoundingClientRect(), px = ev.clientX - rect.left, py = ev.clientY - rect.top;
+    return { px, py, x: (px - PAD.l) / geom.pw * MAXV, y: (1 - (py - PAD.t) / geom.ph) * MAXV };
+  }
+  function nearest(px, py) {
+    let best = -1, bd = HIT * HIT;
+    state.pts.forEach((q, i) => { const dx = geom.X(q.x) - px, dy = geom.Y(q.y) - py, d = dx * dx + dy * dy; if (d <= bd) { bd = d; best = i; } });
+    return best;
+  }
+  cv.addEventListener('pointerdown', ev => {
+    if (!geom) return; const p = toData(ev), i = nearest(p.px, p.py);
+    if ($('removeMode').checked) { if (i >= 0) { state.pts.splice(i, 1); state.preset = ''; render(); } return; }
+    if (i >= 0) state.drag = i;
+    else if (p.x >= 0 && p.x <= MAXV && p.y >= 0 && p.y <= MAXV) { state.pts.push({ x: clamp(p.x), y: clamp(p.y) }); state.drag = state.pts.length - 1; state.preset = ''; }
+    else return;
+    cv.setPointerCapture(ev.pointerId); cv.classList.add('dragging'); render(); ev.preventDefault();
+  });
+  cv.addEventListener('pointermove', ev => {
+    if (state.drag < 0) return; const p = toData(ev);
+    state.pts[state.drag] = { x: clamp(p.x), y: clamp(p.y) }; state.preset = ''; render();
+  });
+  const end = () => { if (state.drag >= 0) { state.drag = -1; cv.classList.remove('dragging'); render(); } };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+
+  const syncPreset = L.chips($('presets'), Object.keys(PRESETS).map(k => ({ value: k, label: PRESETS[k].label })), state.preset, load);
+  ['showLine', 'showRes', 'showSq', 'showMean'].forEach(id => $(id).addEventListener('change', render));
+  $('undo').addEventListener('click', () => { state.pts.pop(); state.preset = ''; render(); });
+  $('clear').addEventListener('click', () => { state.pts = []; state.preset = ''; render(); });
+  L.onRedraw(render, document.querySelector('.plots'));
+  load('positive');
+})();
+</script>
+</body>
+</html>

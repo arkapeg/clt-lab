@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hypothesis Test Lab</title>
+<meta name="description" content="See p-values, significance level, Type I errors and power by running a z-test on many samples.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="../assets/lab.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../">← All applets</a>
+    <h1>Hypothesis Test Lab</h1>
+    <p>We test H₀: μ = 100 using a z-test, with a known population SD σ = 15. You choose the real mean. Draw samples, see each p-value, and count how often the test rejects H₀.</p>
+  </header>
+
+  <div class="bench">
+    <aside class="panel controls" aria-label="Controls">
+      <div>
+        <p class="label">1 · The truth (hidden in real life)</p>
+        <div class="nrow"><label for="mu">Real population mean</label><span class="nval" id="muval"></span></div>
+        <input type="range" id="mu" min="85" max="115" step="1" value="100">
+        <p class="hint" id="truth"></p>
+      </div>
+      <div>
+        <p class="label">2 · Sample size</p>
+        <div class="nrow"><label for="n">Values per sample</label><span class="nval" id="nval"></span></div>
+        <input type="range" id="n" min="4" max="100" step="1" value="25">
+        <div class="quick" id="quick"></div>
+      </div>
+      <div>
+        <p class="label">3 · Test settings</p>
+        <p class="hint" style="margin:0 0 6px">Significance level α</p>
+        <div class="choices" id="alphas" style="grid-template-columns:repeat(3,1fr)"></div>
+        <p class="hint" style="margin:10px 0 6px">Alternative hypothesis</p>
+        <div class="choices" id="alts"></div>
+      </div>
+      <div>
+        <p class="label">4 · Draw samples</p>
+        <div class="draws">
+          <button class="draw" id="d1" type="button">1</button>
+          <button class="draw" id="d100" type="button">100</button>
+          <button class="draw" id="d1000" type="button">1,000</button>
+        </div>
+        <div class="row2"><span class="hint" style="margin:0">Changing a setting starts over.</span><button class="ghost" id="clear" type="button">Clear</button></div>
+      </div>
+    </aside>
+
+    <section class="plots">
+      <div class="panel plot">
+        <h2>The latest sample, judged against H₀</h2>
+        <p class="sub" id="nullsub"></p>
+        <canvas id="cNull" height="230" aria-label="Standard normal curve under H0 with the rejection region and the latest p-value shaded"></canvas>
+        <div class="legend"><span><i style="background:var(--bad-soft);border:1px solid var(--bad)"></i>Rejection region (area α)</span><span><i style="background:var(--mean)"></i>p-value of the latest sample</span></div>
+        <div class="readout">
+          <div class="stat"><div class="k">Latest sample mean</div><div class="v" id="xbar">–</div><div class="t" id="zval"></div></div>
+          <div class="stat hit"><div class="k">p-value</div><div class="v" id="pval">–</div><div class="t" id="decision"></div></div>
+          <div class="stat"><div class="k">Samples drawn</div><div class="v" id="total">0</div><div class="t">each one is a separate test</div></div>
+        </div>
+      </div>
+      <div class="panel plot">
+        <h2>Test statistics from all samples</h2>
+        <p class="sub" id="histsub"></p>
+        <canvas id="cHist" height="210" aria-label="Histogram of z statistics from all samples"></canvas>
+        <div class="readout">
+          <div class="stat hit"><div class="k">Share of tests that rejected H₀</div><div class="v" id="rate">–</div><div class="t" id="rateT"></div></div>
+          <div class="stat"><div class="k">What that share means</div><div class="v" id="kind" style="font-size:0.98rem">–</div><div class="t" id="kindT"></div></div>
+          <div class="stat"><div class="k">Effect in SE units</div><div class="v" id="delta">–</div><div class="t">(real μ − 100) ÷ (σ/√n)</div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="notes panel">
+    <div><h3>When H₀ is true</h3><p>Keep the real mean at 100. The test still rejects about α of the time. Each of those is a Type I error, a false alarm.</p></div>
+    <div><h3>When H₀ is false</h3><p>Move the real mean to 106. Now the share of rejections is the power. It grows with a bigger effect, a larger <span class="mono">n</span> or a larger α.</p></div>
+    <div><h3>Reading a p-value</h3><p>The orange area is the chance of a result at least this far from 100 if H₀ were true. A small p-value means the data would be surprising under H₀.</p></div>
+  </section>
+</div>
+
+<script src="../assets/lab.js"></script>
+<script>
+(function () {
+  const L = Lab, $ = id => document.getElementById(id);
+  const MU0 = 100, SIG = 15, BINS = 60, PAD = { l: 14, r: 14, t: 22, b: 26 };
+  const state = { mu: 100, n: 25, alpha: 0.05, alt: 'two', zs: [], rejects: 0, last: null, job: 0 };
+
+  const se = () => SIG / Math.sqrt(state.n);
+  const delta = () => (state.mu - MU0) / se();
+  const zcrit = () => state.alt === 'two' ? L.normInv(1 - state.alpha / 2) : L.normInv(1 - state.alpha);
+  const pOf = z => state.alt === 'two' ? 2 * (1 - L.normCdf(Math.abs(z))) : 1 - L.normCdf(z);
+  const inReject = z => state.alt === 'two' ? Math.abs(z) >= zcrit() : z >= zcrit();
+  function power() { const c = zcrit(), d = delta(); return state.alt === 'two' ? L.normCdf(-c + d) + L.normCdf(-c - d) : 1 - L.normCdf(c - d); }
+  function range() { const d = delta(); return [Math.min(-4, d - 4), Math.max(4, d + 4)]; }
+
+  function oneSample() {
+    let s = 0; for (let i = 0; i < state.n; i++) s += state.mu + SIG * L.gauss();
+    const xbar = s / state.n, z = (xbar - MU0) / se(), p = pOf(z), reject = p < state.alpha;
+    state.zs.push(z); if (reject) state.rejects++;
+    state.last = { xbar, z, p, reject };
+  }
+
+  function axis(ctx, w, h, C, lo, hi) {
+    const x = v => PAD.l + (v - lo) / (hi - lo) * (w - PAD.l - PAD.r);
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(PAD.l, h - PAD.b + 0.5); ctx.lineTo(w - PAD.r, h - PAD.b + 0.5); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '11px ' + C.mono; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    L.niceTicks(lo, hi, Math.max(4, Math.floor(w / 60))).forEach(t => { const px = x(t); ctx.beginPath(); ctx.moveTo(px + 0.5, h - PAD.b); ctx.lineTo(px + 0.5, h - PAD.b + 4); ctx.stroke(); ctx.fillText(String(t), px, h - PAD.b + 7); });
+    return x;
+  }
+  function fillUnder(ctx, x, y, a, b, f) {
+    if (b <= a) return; ctx.beginPath(); ctx.moveTo(x(a), y(0));
+    for (let i = 0; i <= 120; i++) { const v = a + (b - a) * i / 120; ctx.lineTo(x(v), y(f(v))); }
+    ctx.lineTo(x(b), y(0)); ctx.closePath(); ctx.fill();
+  }
+
+  function drawNull() {
+    const C = L.colors(), { ctx, w, h } = L.setup($('cNull')), [lo, hi] = range(), x = axis(ctx, w, h, C, lo, hi);
+    const ymax = L.normPdf(0) * 1.1, y = d => h - PAD.b - d / ymax * (h - PAD.t - PAD.b), c = zcrit();
+    // rejection region
+    ctx.fillStyle = C.badSoft;
+    fillUnder(ctx, x, y, Math.max(lo, c), hi, L.normPdf);
+    if (state.alt === 'two') fillUnder(ctx, x, y, lo, Math.min(hi, -c), L.normPdf);
+    ctx.strokeStyle = C.bad; ctx.setLineDash([3, 3]);
+    (state.alt === 'two' ? [-c, c] : [c]).forEach(v => { const px = Math.round(x(v)) + 0.5; ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, h - PAD.b); ctx.stroke(); });
+    ctx.setLineDash([]);
+    ctx.fillStyle = C.bad; ctx.font = '600 11px ' + C.mono; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+    ctx.fillText((state.alt === 'two' ? 'z* = ±' : 'z* = ') + c.toFixed(2), x(c) + 4, PAD.t - 18 < 0 ? 2 : 4);
+    // latest p-value area
+    if (state.last) {
+      const z = state.last.z; ctx.fillStyle = C.mean; ctx.globalAlpha = 0.55;
+      if (state.alt === 'two') { const a = Math.abs(z); fillUnder(ctx, x, y, Math.max(lo, a), hi, L.normPdf); fillUnder(ctx, x, y, lo, Math.min(hi, -a), L.normPdf); }
+      else fillUnder(ctx, x, y, Math.max(lo, z), hi, L.normPdf);
+      ctx.globalAlpha = 1;
+    }
+    // null curve
+    ctx.strokeStyle = C.curve; ctx.lineWidth = 2; ctx.beginPath();
+    for (let i = 0; i <= 300; i++) { const v = lo + (hi - lo) * i / 300; i ? ctx.lineTo(x(v), y(L.normPdf(v))) : ctx.moveTo(x(v), y(L.normPdf(v))); }
+    ctx.stroke(); ctx.lineWidth = 1;
+    ctx.fillStyle = C.muted; ctx.font = '11px ' + C.mono; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('H₀ curve', x(0) + 6 > w - 80 ? w - 80 : PAD.l + 2, 4);
+    if (state.last) {
+      const zc = Math.min(hi, Math.max(lo, state.last.z)), px = Math.round(x(zc)) + 0.5;
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(px, PAD.t - 4); ctx.lineTo(px, h - PAD.b); ctx.stroke(); ctx.lineWidth = 1;
+      ctx.fillStyle = C.ink; ctx.font = '600 11px ' + C.mono; const lbl = 'z = ' + state.last.z.toFixed(2), tw = ctx.measureText(lbl).width;
+      const right = px + tw + 8 <= w; ctx.textAlign = right ? 'left' : 'right'; ctx.textBaseline = 'top'; ctx.fillText(lbl, right ? px + 5 : px - 5, h - PAD.b - 16);
+    }
+  }
+
+  function drawHist() {
+    const C = L.colors(), { ctx, w, h } = L.setup($('cHist')), [lo, hi] = range(), x = axis(ctx, w, h, C, lo, hi);
+    const N = state.zs.length, bw = (hi - lo) / BINS, counts = new Array(BINS).fill(0);
+    state.zs.forEach(z => { const b = Math.floor((z - lo) / bw); if (b >= 0 && b < BINS) counts[b]++; });
+    const d = delta(), peak = N * bw * L.normPdf(0);
+    const ymax = Math.max(1, Math.max(...counts), N ? peak : 0) * 1.08, y = c => h - PAD.b - c / ymax * (h - PAD.t - PAD.b);
+    counts.forEach((c, i) => { if (!c) return; const mid = lo + (i + 0.5) * bw; ctx.fillStyle = inReject(mid) ? C.bad : C.pop; const x0 = x(lo + i * bw), x1 = x(lo + (i + 1) * bw); ctx.fillRect(x0 + 0.5, y(c), Math.max(1, x1 - x0 - 1), h - PAD.b - y(c)); });
+    if (N) {
+      const curve = (m, dash) => { ctx.setLineDash(dash); ctx.beginPath(); for (let i = 0; i <= 300; i++) { const v = lo + (hi - lo) * i / 300, py = y(N * bw * L.normPdf(v - m)); i ? ctx.lineTo(x(v), py) : ctx.moveTo(x(v), py); } ctx.stroke(); ctx.setLineDash([]); };
+      ctx.strokeStyle = C.curve; ctx.lineWidth = 2;
+      if (Math.abs(d) > 1e-9) { ctx.globalAlpha = 0.45; curve(0, [5, 4]); ctx.globalAlpha = 1; }
+      curve(d, []); ctx.lineWidth = 1;
+    }
+  }
+
+  function updateText() {
+    const d = delta(), pw = power(), N = state.zs.length, h0 = state.mu === MU0;
+    $('muval').textContent = 'μ = ' + state.mu;
+    $('truth').innerHTML = h0 ? '<span class="good">H₀ is true.</span> Any rejection is a Type I error.' : '<span class="badtxt">H₀ is false</span> (real mean ' + state.mu + '). Any failure to reject is a Type II error.';
+    $('nval').textContent = 'n = ' + state.n;
+    $('nullsub').textContent = 'z = (x̄ − 100) ÷ (15/√' + state.n + '). If H₀ is true, z follows this curve. Reject H₀ when z lands in the red region.';
+    $('histsub').textContent = (h0 ? 'With H₀ true, the bars follow the H₀ curve.' : 'The solid curve is where z really falls. The faint dashed curve is where H₀ says it should fall.') + ' Red bars are rejections.';
+    $('total').textContent = N.toLocaleString();
+    $('delta').textContent = d.toFixed(2);
+    if (state.last) {
+      $('xbar').textContent = state.last.xbar.toFixed(2); $('zval').textContent = 'z = ' + state.last.z.toFixed(2);
+      $('pval').textContent = state.last.p < 0.0001 ? '< 0.0001' : state.last.p.toFixed(4);
+      $('decision').innerHTML = state.last.reject ? '<span class="badtxt">p &lt; α: reject H₀</span>' : '<span class="good">p ≥ α: do not reject H₀</span>';
+    } else { $('xbar').textContent = '–'; $('zval').textContent = 'press a Draw button'; $('pval').textContent = '–'; $('decision').textContent = ''; }
+    $('rate').textContent = N ? (100 * state.rejects / N).toFixed(1) + '%' : '–';
+    $('rateT').textContent = (N ? state.rejects.toLocaleString() + ' of ' + N.toLocaleString() + ' · ' : '') + 'theory: ' + (100 * (h0 ? state.alpha : pw)).toFixed(1) + '%';
+    $('kind').textContent = h0 ? 'Type I error rate' : 'Power';
+    $('kindT').textContent = h0 ? 'should be close to α = ' + state.alpha : 'chance of correctly rejecting H₀';
+    syncAlpha(String(state.alpha)); syncAlt(state.alt);
+    document.querySelectorAll('#quick button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.n === state.n)));
+  }
+  function render() { updateText(); drawNull(); drawHist(); }
+
+  function drawMany(k) {
+    const job = ++state.job;
+    if (k <= 1 || L.reduceMotion) { for (let i = 0; i < k; i++) oneSample(); render(); return; }
+    let left = k; const per = Math.max(1, Math.ceil(k / 25));
+    (function tick() { if (job !== state.job) return; const m = Math.min(per, left); for (let i = 0; i < m; i++) oneSample(); left -= m; render(); if (left > 0) requestAnimationFrame(tick); })();
+  }
+  function clear() { state.job++; state.zs = []; state.rejects = 0; state.last = null; render(); }
+
+  const syncAlpha = L.chips($('alphas'), [0.1, 0.05, 0.01].map(a => ({ value: String(a), label: 'α = ' + a })), String(state.alpha), v => { if (+v !== state.alpha) { state.alpha = +v; clear(); } });
+  const syncAlt = L.chips($('alts'), [{ value: 'two', label: 'μ ≠ 100' }, { value: 'greater', label: 'μ > 100' }], state.alt, v => { if (v !== state.alt) { state.alt = v; clear(); } });
+  [4, 9, 25, 50, 100].forEach(n => { const b = document.createElement('button'); b.type = 'button'; b.dataset.n = n; b.textContent = n; b.addEventListener('click', () => { $('n').value = n; setN(n); }); $('quick').appendChild(b); });
+  function setN(n) { if (n !== state.n) { state.n = n; clear(); } }
+  $('n').addEventListener('input', e => setN(+e.target.value));
+  $('mu').addEventListener('input', e => { const v = +e.target.value; if (v !== state.mu) { state.mu = v; clear(); } });
+  $('d1').addEventListener('click', () => drawMany(1));
+  $('d100').addEventListener('click', () => drawMany(100));
+  $('d1000').addEventListener('click', () => drawMany(1000));
+  $('clear').addEventListener('click', clear);
+  L.onRedraw(render, document.querySelector('.plots'));
+
+  for (let i = 0; i < 200; i++) oneSample();
+  render();
+})();
+</script>
+</body>
+</html>

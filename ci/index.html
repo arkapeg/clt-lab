@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Confidence Interval Lab</title>
+<meta name="description" content="Draw many samples and see what fraction of their confidence intervals capture the true mean.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="../assets/lab.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../">← All applets</a>
+    <h1>Confidence Interval Lab</h1>
+    <p>The true mean is μ = 50. Each sample gives a t-interval x̄ ± t*·s/√n. Draw many samples and count how often the interval catches μ. That fraction is what "95% confidence" means.</p>
+  </header>
+
+  <div class="bench">
+    <aside class="panel controls" aria-label="Controls">
+      <div>
+        <p class="label">1 · Population</p>
+        <div class="choices" id="pops"></div>
+        <p class="hint" id="popdesc"></p>
+      </div>
+      <div>
+        <p class="label">2 · Sample size</p>
+        <div class="nrow"><label for="n">Values per sample</label><span class="nval" id="nval"></span></div>
+        <input type="range" id="n" min="2" max="100" step="1" value="10">
+        <div class="quick" id="quick"></div>
+      </div>
+      <div>
+        <p class="label">3 · Confidence level</p>
+        <div class="choices four" id="confs"></div>
+      </div>
+      <div>
+        <p class="label">4 · Draw samples</p>
+        <div class="draws">
+          <button class="draw" id="d1" type="button">1</button>
+          <button class="draw" id="d20" type="button">20</button>
+          <button class="draw" id="d100" type="button">100</button>
+        </div>
+        <div class="row2"><span class="hint" style="margin:0">Changing a setting starts over.</span><button class="ghost" id="clear" type="button">Clear</button></div>
+      </div>
+    </aside>
+
+    <section class="plots">
+      <div class="panel plot">
+        <h2>The population</h2>
+        <p class="sub">Its mean μ = 50 is the number every interval is trying to catch.</p>
+        <canvas id="cPop" height="110" aria-label="Shape of the population"></canvas>
+      </div>
+      <div class="panel plot">
+        <h2>The 40 most recent intervals</h2>
+        <p class="sub" id="ivsub"></p>
+        <canvas id="cIv" height="400" aria-label="Horizontal confidence intervals, newest at the top"></canvas>
+        <div class="legend"><span><i style="background:var(--pop)"></i>Contains μ</span><span><i style="background:var(--bad)"></i>Misses μ</span><span>● sample mean x̄</span></div>
+        <div class="readout">
+          <div class="stat"><div class="k">Intervals drawn</div><div class="v" id="total">0</div><div class="t">one per sample</div></div>
+          <div class="stat hit"><div class="k">Share that contain μ</div><div class="v" id="cover">–</div><div class="t" id="coverT"></div></div>
+          <div class="stat"><div class="k">Latest interval</div><div class="v" id="last">–</div><div class="t" id="lastT"></div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="notes panel">
+    <div><h3>The method is 95% reliable</h3><p>About 95% of intervals catch μ in the long run. Any single interval either contains μ or it does not. The 95% describes the procedure, not one interval.</p></div>
+    <div><h3>Confidence costs width</h3><p>Switch from 90% to 99% and the intervals get wider. Larger <span class="mono">n</span> makes them narrower, roughly like <span class="mono">1/√n</span>.</p></div>
+    <div><h3>Assumptions matter</h3><p>With the right-skewed population and a small sample (try <span class="mono">n = 5</span>), the share that catch μ drops below the target. With larger <span class="mono">n</span> it recovers.</p></div>
+  </section>
+</div>
+
+<script src="../assets/lab.js"></script>
+<script>
+(function () {
+  const L = Lab, $ = id => document.getElementById(id);
+  const MU = 50, SD = 10, LO = 20, HI = 80, SHOW = 40;
+  const POPS = {
+    normal: { label: 'Bell-shaped', desc: 'Normal with mean 50 and SD 10.', draw: () => MU + SD * L.gauss(), pdf: x => L.normPdf((x - MU) / SD) / SD },
+    skewed: { label: 'Right-skewed', desc: 'Skewed right, mean 50 and SD 10. Most values are a bit below 50, a few are far above.',
+              draw: () => MU + SD * (-Math.log(1 - Math.random()) - 1), pdf: x => (x < 40 ? 0 : Math.exp(-(x - 40) / 10) / 10) }
+  };
+  const state = { pop: 'normal', n: 10, conf: 0.95, list: [], total: 0, hits: 0, job: 0 };
+  const PAD = { l: 14, r: 14, t: 20, b: 26 };
+
+  function oneInterval() {
+    const p = POPS[state.pop], n = state.n; let s = 0, ss = 0;
+    for (let i = 0; i < n; i++) { const x = p.draw(); s += x; ss += x * x; }
+    const m = s / n, sd = Math.sqrt(Math.max(0, (ss - n * m * m) / (n - 1)));
+    const tc = L.tInv(1 - (1 - state.conf) / 2, n - 1), me = tc * sd / Math.sqrt(n);
+    const iv = { m, sd, me, lo: m - me, hi: m + me, hit: m - me <= MU && MU <= m + me };
+    state.list.push(iv); if (state.list.length > SHOW) state.list.shift();
+    state.total++; if (iv.hit) state.hits++;
+  }
+
+  function axis(ctx, w, h, C) {
+    const x = v => PAD.l + (v - LO) / (HI - LO) * (w - PAD.l - PAD.r);
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(PAD.l, h - PAD.b + 0.5); ctx.lineTo(w - PAD.r, h - PAD.b + 0.5); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '11px ' + C.mono; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    L.niceTicks(LO, HI, Math.max(4, Math.floor(w / 70))).forEach(t => { const px = x(t); ctx.beginPath(); ctx.moveTo(px + 0.5, h - PAD.b); ctx.lineTo(px + 0.5, h - PAD.b + 4); ctx.stroke(); ctx.fillText(String(t), px, h - PAD.b + 7); });
+    return x;
+  }
+  function muLine(ctx, x, h, C) {
+    const px = Math.round(x(MU)) + 0.5;
+    ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = C.ink; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.moveTo(px, PAD.t - 6); ctx.lineTo(px, h - PAD.b); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = C.ink; ctx.font = '600 11px ' + C.mono; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('μ = 50', px + 5, 2);
+  }
+
+  function drawPop() {
+    const C = L.colors(), { ctx, w, h } = L.setup($('cPop')), x = axis(ctx, w, h, C), pdf = POPS[state.pop].pdf;
+    let ymax = 0; for (let v = LO; v <= HI; v += 0.25) ymax = Math.max(ymax, pdf(v));
+    const y = d => h - PAD.b - d / (ymax * 1.08) * (h - PAD.t - PAD.b);
+    ctx.beginPath(); ctx.moveTo(x(LO), h - PAD.b);
+    for (let i = 0; i <= 300; i++) { const v = LO + (HI - LO) * i / 300; ctx.lineTo(x(v), y(pdf(v))); }
+    ctx.lineTo(x(HI), h - PAD.b); ctx.closePath(); ctx.fillStyle = C.popSoft; ctx.fill(); ctx.strokeStyle = C.pop; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
+    muLine(ctx, x, h, C);
+  }
+
+  function drawIntervals() {
+    const C = L.colors(), { ctx, w, h } = L.setup($('cIv')), x = axis(ctx, w, h, C);
+    const rowH = (h - PAD.t - PAD.b) / SHOW, lw = Math.max(1.5, Math.min(3, rowH * 0.35));
+    const xl = PAD.l, xr = w - PAD.r;
+    const list = state.list.slice().reverse(); // newest on top
+    list.forEach((iv, i) => {
+      const yc = PAD.t + rowH * (i + 0.5), col = iv.hit ? C.pop : C.bad;
+      const a = Math.max(xl, x(iv.lo)), b = Math.min(xr, x(iv.hi));
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw; ctx.globalAlpha = i === 0 ? 1 : 0.85;
+      ctx.beginPath(); ctx.moveTo(a, yc); ctx.lineTo(b, yc); ctx.stroke();
+      const cap = Math.min(5, rowH * 0.4);
+      [[x(iv.lo), a, -1], [x(iv.hi), b, 1]].forEach(([raw, px, dir]) => {
+        ctx.beginPath();
+        if (raw === px) { ctx.moveTo(px, yc - cap); ctx.lineTo(px, yc + cap); ctx.lineWidth = 1.5; ctx.stroke(); }
+        else { ctx.moveTo(px, yc); ctx.lineTo(px - dir * 6, yc - 4); ctx.lineTo(px - dir * 6, yc + 4); ctx.closePath(); ctx.fill(); }
+      });
+      ctx.lineWidth = 1;
+      const pm = x(iv.m); if (pm >= xl && pm <= xr) { ctx.beginPath(); ctx.arc(pm, yc, Math.max(2, Math.min(3.5, rowH * 0.35)), 0, Math.PI * 2); ctx.fill(); }
+    });
+    ctx.globalAlpha = 1;
+    if (list.length) { ctx.fillStyle = C.muted; ctx.font = '10px ' + C.mono; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText('newest', xr, PAD.t + rowH * 0.5 - Math.max(8, rowH)); }
+    muLine(ctx, x, h, C);
+  }
+
+  function updateText() {
+    const df = state.n - 1, tc = L.tInv(1 - (1 - state.conf) / 2, df), pct = Math.round(state.conf * 100);
+    $('nval').textContent = 'n = ' + state.n;
+    $('popdesc').textContent = POPS[state.pop].desc;
+    $('ivsub').textContent = 'Each line is x̄ ± t*·s/√n with t* = ' + L.fmt(tc) + ' (' + pct + '% level, ' + df + ' degrees of freedom).';
+    $('total').textContent = state.total.toLocaleString();
+    $('cover').textContent = state.total ? (100 * state.hits / state.total).toFixed(1) + '%' : '–';
+    $('coverT').textContent = state.total ? state.hits.toLocaleString() + ' of ' + state.total.toLocaleString() + ' · target ' + pct + '%' : 'target ' + pct + '%';
+    const iv = state.list[state.list.length - 1];
+    if (iv) { $('last').textContent = '[' + iv.lo.toFixed(1) + ', ' + iv.hi.toFixed(1) + ']'; $('lastT').innerHTML = 'x̄ = ' + iv.m.toFixed(2) + ', s = ' + iv.sd.toFixed(2) + ' · ' + (iv.hit ? '<span class="good">catches μ</span>' : '<span class="badtxt">misses μ</span>'); }
+    else { $('last').textContent = '–'; $('lastT').textContent = 'press a Draw button'; }
+    syncPop(state.pop); syncConf(String(state.conf));
+    document.querySelectorAll('#quick button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.n === state.n)));
+  }
+  function render() { updateText(); drawPop(); drawIntervals(); }
+
+  function drawMany(k) {
+    const job = ++state.job;
+    if (k <= 1 || L.reduceMotion) { for (let i = 0; i < k; i++) oneInterval(); render(); return; }
+    let left = k; const per = Math.max(1, Math.ceil(k / 25));
+    (function tick() { if (job !== state.job) return; const m = Math.min(per, left); for (let i = 0; i < m; i++) oneInterval(); left -= m; updateText(); drawIntervals(); if (left > 0) requestAnimationFrame(tick); })();
+  }
+  function clear() { state.job++; state.list = []; state.total = 0; state.hits = 0; render(); }
+
+  const syncPop = L.chips($('pops'), Object.keys(POPS).map(k => ({ value: k, label: POPS[k].label })), state.pop, v => { if (v !== state.pop) { state.pop = v; clear(); } });
+  const syncConf = L.chips($('confs'), [0.8, 0.9, 0.95, 0.99].map(c => ({ value: String(c), label: Math.round(c * 100) + '%' })), String(state.conf), v => { if (+v !== state.conf) { state.conf = +v; clear(); } });
+  [2, 5, 10, 30, 100].forEach(n => { const b = document.createElement('button'); b.type = 'button'; b.dataset.n = n; b.textContent = n; b.addEventListener('click', () => { $('n').value = n; setN(n); }); $('quick').appendChild(b); });
+  function setN(n) { if (n !== state.n) { state.n = n; clear(); } }
+  $('n').addEventListener('input', e => setN(+e.target.value));
+  $('d1').addEventListener('click', () => drawMany(1));
+  $('d20').addEventListener('click', () => drawMany(20));
+  $('d100').addEventListener('click', () => drawMany(100));
+  $('clear').addEventListener('click', clear);
+  L.onRedraw(render, document.querySelector('.plots'));
+
+  for (let i = 0; i < 40; i++) oneInterval();
+  render();
+})();
+</script>
+</body>
+</html>

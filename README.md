@@ -1,5 +1,15 @@
-# Central Limit Theorem Lab
+# Stats Teaching Lab
 
-Interactive applet for undergraduate statistics. Pick a population and a sample size, draw samples, and watch the sample means form a normal curve.
+Interactive applets for introductory statistics.
 
-Live: https://arkapeg.github.io/clt-lab
+Live: https://arkapeg.github.io/clt-lab/
+
+| Applet | Folder |
+|---|---|
+| Law of Large Numbers | `lln/` |
+| Central Limit Theorem | `clt/` |
+| Confidence Intervals | `ci/` |
+| Hypothesis Tests | `testing/` |
+| Least Squares Regression | `regression/` |
+
+Shared styles and math helpers are in `assets/`.
