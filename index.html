@@ -202,7 +202,7 @@ input[type=range] { width: 100%; accent-color: var(--mean); }
     return { ink: g('--ink'), muted: g('--muted'), rule: g('--rule'), pop: g('--pop'), mean: g('--mean'), curve: g('--curve'), mono: g('--f-mono') };
   }
   function setup(canvas) {
-    const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = +canvas.getAttribute('height');
+    const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = +(canvas.dataset.h || (canvas.dataset.h = canvas.getAttribute('height')));
     canvas.style.height = h + 'px';
     if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
     const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
