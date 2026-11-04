@@ -94,6 +94,14 @@ input[type=range] { width: 100%; accent-color: var(--mean); }
 .notes p { margin: 0; color: var(--muted); font-size: 0.9rem; max-width: 60ch; }
 .mono { font-family: var(--f-mono); font-size: 0.92em; }
 .empty { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+.drawbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.drawbar[hidden] { display: none; }
+.drawbar .hint { font-size: 0.85rem; color: var(--pop); font-weight: 700; }
+.drawbtns { display: flex; gap: 6px; }
+.drawbtns .ghost { padding: 4px 10px; font-size: 0.82rem; }
+canvas.drawable { cursor: crosshair; touch-action: none; }
+.draw:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+.chip.wide { grid-column: 1 / -1; text-align: center; border-style: dashed; }
 </style>
 </head>
 <body>
@@ -138,6 +146,13 @@ input[type=range] { width: 100%; accent-color: var(--mean); }
         <h2>The population</h2>
         <p class="sub" id="popsub"></p>
         <canvas id="cPop" height="150" aria-label="Histogram of the population"></canvas>
+        <div class="drawbar" id="drawbar" hidden>
+          <span class="hint">✎ Drag across the chart to draw the population's shape.</span>
+          <span class="drawbtns">
+            <button class="ghost" type="button" data-preset="flat">Flat</button>
+            <button class="ghost" type="button" data-preset="blank">Blank</button>
+          </span>
+        </div>
       </div>
       <div class="panel plot">
         <h2>The latest sample</h2>
@@ -181,7 +196,37 @@ input[type=range] { width: 100%; accent-color: var(--mean); }
     coin:    { label: 'Coin, p = 0.3', name: 'Coin that lands heads (1) 30% of the time', lo: -0.25, hi: 1.25, mu: 0.3, sd: Math.sqrt(0.21), bins: 3, discrete: true,
                draw: () => (Math.random() < 0.3 ? 1 : 0) }
   };
-  const ORDER = ['exp', 'unif', 'ushape', 'bimodal', 'die', 'coin'];
+  // Hand-drawn population: piecewise-constant density on [0, 10] made of CB bars.
+  const CB = 50;
+  const custom = {
+    label: '✎ Draw your own', name: 'Your drawing: drag across the chart to change it', lo: 0, hi: 10, bins: CB, custom: true,
+    w: new Array(CB).fill(0), cdf: null, mu: 5, sd: 1,
+    draw() {
+      const u = Math.random(), c = this.cdf; let a = 0, b = CB - 1;
+      while (a < b) { const m = (a + b) >> 1; if (c[m] < u) a = m + 1; else b = m; }
+      return (a + Math.random()) * (this.hi - this.lo) / CB + this.lo;
+    }
+  };
+  // Starting sketch: a tall spike near 1.5, a long flat shelf, and a small bump near 8.5.
+  for (let i = 0; i < CB; i++) {
+    const v = (i + 0.5) / 5;
+    custom.w[i] = 0.92 * Math.exp(-(((v - 1.5) / 0.6) ** 2)) + 0.18 * (v > 3 && v < 7) + 0.45 * Math.exp(-(((v - 8.5) / 0.45) ** 2));
+  }
+  function finalizeCustom() {
+    let tot = custom.w.reduce((a, b) => a + b, 0);
+    custom.empty = tot <= 1e-9;
+    const wts = custom.empty ? new Array(CB).fill(1) : custom.w; if (custom.empty) tot = CB;
+    const bw = (custom.hi - custom.lo) / CB; let acc = 0, m1 = 0, m2 = 0;
+    custom.cdf = wts.map((wi, i) => {
+      const p = wi / tot, c = custom.lo + (i + 0.5) * bw;
+      m1 += p * c; m2 += p * (c * c + bw * bw / 12); acc += p; return acc;
+    });
+    custom.cdf[CB - 1] = 1;
+    custom.mu = m1; custom.sd = Math.sqrt(Math.max(1e-12, m2 - m1 * m1));
+  }
+  finalizeCustom();
+  DISTS.custom = custom;
+  const ORDER = ['exp', 'unif', 'ushape', 'bimodal', 'die', 'coin', 'custom'];
   const MEAN_BINS = 60, MAX_MEANS = 200000;
 
   const state = { dist: 'exp', n: 5, means: [], sum: 0, sumsq: 0, last: null, curve: true, job: 0 };
@@ -224,6 +269,7 @@ input[type=range] { width: 100%; accent-color: var(--mean); }
   }
 
   function popCounts(key) {
+    if (DISTS[key].custom) return DISTS[key].w;
     if (popCache[key]) return popCache[key];
     const d = DISTS[key], counts = new Array(d.bins).fill(0), N = 30000;
     for (let i = 0; i < N; i++) { const v = d.draw(), b = Math.floor((v - d.lo) / (d.hi - d.lo) * d.bins); if (b >= 0 && b < d.bins) counts[b]++; }
@@ -232,13 +278,18 @@ input[type=range] { width: 100%; accent-color: var(--mean); }
 
   function drawPop() {
     const d = DISTS[state.dist], C = colors(), { ctx, w, h } = setup($('cPop'));
-    const x = xAxis(ctx, w, h, d, C), counts = popCounts(state.dist), max = Math.max(...counts), bw = (d.hi - d.lo) / d.bins;
+    const x = xAxis(ctx, w, h, d, C), counts = popCounts(state.dist), max = d.custom ? 1 : Math.max(...counts), bw = (d.hi - d.lo) / d.bins;
+    $('cPop').classList.toggle('drawable', !!d.custom);
+    if (d.custom) {
+      ctx.save(); ctx.setLineDash([3, 4]); ctx.strokeStyle = C.rule;
+      ctx.strokeRect(PAD.l + 0.5, PAD.t + 0.5, w - PAD.l - PAD.r - 1, h - PAD.t - PAD.b - 1); ctx.restore();
+    }
     ctx.fillStyle = C.pop;
     counts.forEach((c, i) => {
       const x0 = x(d.lo + i * bw), x1 = x(d.lo + (i + 1) * bw), gap = d.discrete ? (x1 - x0) * 0.3 : 1;
       const bh = c / max * (h - PAD.t - PAD.b); ctx.fillRect(x0 + gap / 2, h - PAD.b - bh, Math.max(1, x1 - x0 - gap), bh);
     });
-    muLine(ctx, x, h, d, C, 'μ = ' + (+d.mu.toFixed(3)));
+    if (!(d.custom && d.empty)) muLine(ctx, x, h, d, C, 'μ = ' + (+d.mu.toFixed(3)));
   }
 
   function drawSample() {
@@ -288,7 +339,10 @@ input[type=range] { width: 100%; accent-color: var(--mean); }
   function updateText() {
     const d = DISTS[state.dist], N = state.means.length, se = d.sd / Math.sqrt(state.n);
     $('distname').textContent = d.name;
-    $('popsub').textContent = 'Mean μ = ' + fmt(d.mu) + ', standard deviation σ = ' + fmt(d.sd) + '.';
+    $('popsub').textContent = d.custom && d.empty ? 'Nothing drawn yet. Drag across the chart below to sketch a shape.'
+      : 'Mean μ = ' + fmt(d.mu) + ', standard deviation σ = ' + fmt(d.sd) + '.';
+    $('drawbar').hidden = !d.custom;
+    ['d1', 'd100', 'd1000'].forEach(id => { $(id).disabled = !!(d.custom && d.empty); });
     $('meansub').textContent = 'Each bar counts sample averages x̄ (n = ' + state.n + ').' + (state.curve ? ' The curve is the normal distribution the CLT predicts: mean μ, SD σ/√n = ' + fmt(se) + '.' : '');
     $('nval').textContent = 'n = ' + state.n;
     $('count').textContent = N.toLocaleString();
@@ -322,7 +376,7 @@ input[type=range] { width: 100%; accent-color: var(--mean); }
   function clear() { state.job++; state.means = []; state.sum = 0; state.sumsq = 0; state.last = null; render(); }
 
   ORDER.forEach(k => {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.dataset.k = k; b.textContent = DISTS[k].label;
+    const b = document.createElement('button'); b.type = 'button'; b.className = DISTS[k].custom ? 'chip wide' : 'chip'; b.dataset.k = k; b.textContent = DISTS[k].label;
     b.addEventListener('click', () => { if (state.dist !== k) { state.dist = k; clear(); } });
     $('dists').appendChild(b);
   });
@@ -338,6 +392,37 @@ input[type=range] { width: 100%; accent-color: var(--mean); }
   $('d1000').addEventListener('click', () => drawMany(1000));
   $('reset').addEventListener('click', clear);
   $('curve').addEventListener('change', e => { state.curve = e.target.checked; updateText(); drawMeans(); });
+
+  // Drawing on the population chart (mouse, pen or finger). Each bar under the pointer
+  // is set to the pointer's height; fast strokes are interpolated so no bars are skipped.
+  const cPop = $('cPop'); let pen = null;
+  function penAt(e) {
+    const r = cPop.getBoundingClientRect(), w = r.width, h = +cPop.getAttribute('height');
+    const fx = (e.clientX - r.left - PAD.l) / (w - PAD.l - PAD.r);
+    const fy = (h - PAD.b - (e.clientY - r.top)) / (h - PAD.t - PAD.b);
+    return { i: Math.floor(fx * CB), v: Math.min(1, Math.max(0, fy)) };
+  }
+  function paint(p, q) {
+    const a = q || p, lo = Math.min(a.i, p.i), hi = Math.max(a.i, p.i);
+    for (let i = lo; i <= hi; i++) {
+      if (i < 0 || i >= CB) continue;
+      const t = p.i === a.i ? 1 : (i - a.i) / (p.i - a.i);
+      custom.w[i] = a.v + (p.v - a.v) * t;
+    }
+    finalizeCustom(); updateText(); drawPop();
+  }
+  cPop.addEventListener('pointerdown', e => {
+    if (!DISTS[state.dist].custom) return;
+    e.preventDefault(); cPop.setPointerCapture(e.pointerId);
+    state.job++; pen = penAt(e); paint(pen);
+  });
+  cPop.addEventListener('pointermove', e => { if (!pen) return; const p = penAt(e); paint(p, pen); pen = p; });
+  function penUp() { if (!pen) return; pen = null; clear(); }
+  cPop.addEventListener('pointerup', penUp);
+  cPop.addEventListener('pointercancel', penUp);
+  document.querySelectorAll('#drawbar [data-preset]').forEach(b => b.addEventListener('click', () => {
+    custom.w.fill(b.dataset.preset === 'flat' ? 0.5 : 0); finalizeCustom(); clear();
+  }));
 
   let rz; new ResizeObserver(() => { cancelAnimationFrame(rz); rz = requestAnimationFrame(render); }).observe(document.querySelector('.plots'));
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
