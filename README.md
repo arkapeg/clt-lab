@@ -8,6 +8,7 @@ Live: https://arkapeg.github.io/clt-lab/
 |---|---|
 | Law of Large Numbers | `lln/` |
 | Central Limit Theorem | `clt/` |
+| Quincunx (Galton board) | `quincunx/` |
 | Confidence Intervals | `ci/` |
 | Hypothesis Tests | `testing/` |
 | Least Squares Regression | `regression/` |

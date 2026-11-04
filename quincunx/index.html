@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Quincunx (Galton board) applet: balls bounce left or right off pegs and pile up into a bell curve.">
+<title>Quincunx Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f2f4f7; --surface: #ffffff; --ink: #18202c; --muted: #5a6475; --rule: #d8dde6;
+  --pop: #3c68ad; --pop-soft: #3c68ad26; --mean: #c96f1c; --mean-soft: #c96f1c22; --curve: #18202c; --peg: #8a93a3;
+  --f-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f131a; --surface: #171c25; --ink: #e5e9f0; --muted: #9ba4b4; --rule: #2a3241;
+    --pop: #7ea6e6; --pop-soft: #7ea6e62b; --mean: #f0a258; --mean-soft: #f0a25826; --curve: #e5e9f0; --peg: #6b7487;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f131a; --surface: #171c25; --ink: #e5e9f0; --muted: #9ba4b4; --rule: #2a3241;
+  --pop: #7ea6e6; --pop-soft: #7ea6e62b; --mean: #f0a258; --mean-soft: #f0a25826; --curve: #e5e9f0; --peg: #6b7487;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 20px; }
+.nav { font-size: 0.88rem; }
+.nav a { color: var(--pop); font-weight: 700; text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+header h1 { font-family: var(--f-display); font-weight: 600; font-size: clamp(1.7rem, 3.4vw, 2.4rem); line-height: 1.15; margin: 0; text-wrap: balance; }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+.bench { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 820px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; }
+.controls { display: grid; gap: 18px; }
+.label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; margin: 0 0 8px; }
+.nrow { display: flex; align-items: baseline; justify-content: space-between; }
+.nval { font-family: var(--f-mono); font-size: 1.2rem; font-weight: 600; white-space: nowrap; }
+.nrow { gap: 8px; }
+input[type=range] { width: 100%; accent-color: var(--mean); }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--pop); outline-offset: 2px; }
+.quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.quick button { border: 1px solid var(--rule); background: transparent; border-radius: 6px; padding: 3px 9px; font-family: var(--f-mono); font-size: 0.82rem; }
+.quick button[aria-pressed="true"] { border-color: var(--mean); background: var(--mean-soft); }
+.draws { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.draw { background: var(--mean); color: #fff; border: 0; border-radius: 7px; padding: 9px 4px; font-weight: 700; font-size: 0.9rem; }
+:root[data-theme="dark"] .draw { color: #1b1206; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .draw { color: #1b1206; } }
+.draw:hover { filter: brightness(1.06); }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 4px; font-size: 0.85rem; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--pop-soft); font-weight: 700; }
+.ghost { border: 1px solid var(--rule); background: transparent; border-radius: 7px; padding: 6px 12px; font-size: 0.88rem; }
+.stack { display: grid; gap: 8px; }
+.row2 { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.check { display: flex; align-items: center; gap: 7px; font-size: 0.88rem; }
+.check input { accent-color: var(--ink); width: 16px; height: 16px; }
+.plot h2 { font-family: var(--f-display); font-weight: 500; font-size: 1.12rem; margin: 0; }
+.plot .sub { margin: 2px 0 8px; color: var(--muted); font-size: 0.85rem; }
+.plot canvas { display: block; width: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
+.legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.readout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+@media (max-width: 520px) { .readout { grid-template-columns: minmax(0, 1fr); } }
+.stat { border-top: 2px solid var(--rule); padding-top: 8px; }
+.stat .k { font-size: 0.78rem; color: var(--muted); }
+.stat .v { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 1.15rem; font-weight: 600; }
+.stat .t { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 0.8rem; color: var(--muted); }
+.stat.hit { border-top-color: var(--mean); }
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 820px) { .notes { grid-template-columns: minmax(0, 1fr); } }
+.notes h3 { font-family: var(--f-display); font-weight: 600; font-size: 1.02rem; margin: 0 0 4px; }
+.notes p { margin: 0; color: var(--muted); font-size: 0.9rem; max-width: 60ch; }
+.mono { font-family: var(--f-mono); font-size: 0.92em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="nav"><a href="../">← All applets</a> · <a href="../clt/">Central Limit Theorem Lab</a></div>
+  <header>
+    <h1>Quincunx Lab</h1>
+    <p>Each ball hits a peg in every row and bounces right with probability <span class="mono">p</span>, left otherwise. The bin it lands in counts how many times it went right. Drop enough balls and the bins trace out a bell curve.</p>
+  </header>
+
+  <div class="bench">
+    <aside class="panel controls" aria-label="Controls">
+      <div>
+        <p class="label">1 · Board</p>
+        <div class="nrow"><label for="rows">Rows of pegs</label><span class="nval" id="rowsval">n = 12</span></div>
+        <input type="range" id="rows" min="1" max="30" step="1" value="12">
+        <div class="quick" id="quick"></div>
+      </div>
+      <div>
+        <div class="nrow"><label for="p">Chance of bouncing right</label><span class="nval" id="pval">p = 0.50</span></div>
+        <input type="range" id="p" min="0.05" max="0.95" step="0.05" value="0.5">
+      </div>
+
+      <div class="stack">
+        <p class="label" style="margin:0">2 · Drop balls</p>
+        <div class="draws">
+          <button class="draw" id="b1" type="button">1</button>
+          <button class="draw" id="b10" type="button">10</button>
+          <button class="draw" id="b100" type="button">100</button>
+        </div>
+        <button class="ghost" id="b1000" type="button">Add 1,000 instantly</button>
+        <div>
+          <p class="label" style="margin:4px 0 6px">Speed</p>
+          <div class="seg" id="speed">
+            <button type="button" data-ms="200">Slow</button>
+            <button type="button" data-ms="85" aria-pressed="true">Medium</button>
+            <button type="button" data-ms="30">Fast</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <p class="label" style="margin:0">3 · Compare with theory</p>
+        <label class="check"><input type="checkbox" id="showBin" checked> Binomial expected counts</label>
+        <label class="check"><input type="checkbox" id="showNorm" checked> Normal curve</label>
+        <div class="row2"><span></span><button class="ghost" id="clear" type="button">Clear</button></div>
+      </div>
+    </aside>
+
+    <section class="panel plot">
+      <h2>The board</h2>
+      <p class="sub" id="boardsub"></p>
+      <canvas id="board" height="600" aria-label="Galton board with pegs, falling balls and bins"></canvas>
+      <div class="legend">
+        <span><i style="border-color:var(--mean)"></i>Balls in each bin</span>
+        <span id="lgBin"><i style="border-color:var(--pop);border-top-style:solid;border-top-width:3px"></i>Binomial expected</span>
+        <span id="lgNorm"><i style="border-color:var(--curve)"></i>Normal: mean np, SD √(np(1−p))</span>
+      </div>
+      <div class="readout">
+        <div class="stat"><div class="k">Balls landed</div><div class="v" id="count">0</div><div class="t" id="inflight">0 still falling</div></div>
+        <div class="stat hit"><div class="k">Average bin</div><div class="v" id="mm">–</div><div class="t" id="mmT"></div></div>
+        <div class="stat hit"><div class="k">Spread (SD) of bins</div><div class="v" id="sm">–</div><div class="t" id="smT"></div></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="notes panel">
+    <div><h3>A ball is a sum of coin flips</h3><p>At each of the <span class="mono">n</span> rows the ball flips a coin: right counts 1, left counts 0. Its bin number is the total, so it follows a Binomial(<span class="mono">n</span>, <span class="mono">p</span>) distribution.</p></div>
+    <div><h3>That's the CLT at work</h3><p>A sum of many independent flips is approximately normal, with mean <span class="mono">np</span> and SD <span class="mono">√(np(1−p))</span>. More rows means more flips per ball, and a closer match to the curve.</p></div>
+    <div><h3>Try this</h3><p>Set <span class="mono">p = 0.15</span> with 3 rows: the pile is lopsided. Keep <span class="mono">p</span> but raise the rows to 30, and the pile becomes a bell again.</p></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const cv = $('board');
+  const state = { R: 12, p: 0.5, counts: [], balls: [], queue: 0, total: 0, sum: 0, sumsq: 0, segMs: 85, showBin: true, showNorm: true, spawnAcc: 0, last: 0, running: false };
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function fmt(x, d = 2) { return Number.isFinite(x) ? x.toFixed(d) : '–'; }
+  function colors() {
+    const cs = getComputedStyle(document.documentElement), g = k => cs.getPropertyValue(k).trim();
+    return { ink: g('--ink'), muted: g('--muted'), rule: g('--rule'), pop: g('--pop'), mean: g('--mean'), curve: g('--curve'), peg: g('--peg'), mono: g('--f-mono') };
+  }
+
+  // Binomial pmf, computed in log space so 30 rows stays accurate.
+  function lgamma(n) { let s = 0; for (let i = 2; i <= n; i++) s += Math.log(i); return s; }
+  function pmf(k) {
+    const n = state.R, p = state.p;
+    return Math.exp(lgamma(n) - lgamma(k) - lgamma(n - k) + k * Math.log(p) + (n - k) * Math.log(1 - p));
+  }
+
+  // Board geometry, recomputed from the canvas width.
+  let G = null;
+  function geometry() {
+    const W = cv.clientWidth, R = state.R, pad = 14;
+    const dx = Math.min(46, (W - 2 * pad) / (R + 1));
+    const dy = Math.min(dx * 0.9, 34);
+    const top = pad + 22;
+    const pegR = Math.max(1.6, Math.min(4, dx * 0.1)), ballR = Math.max(2.2, Math.min(7, dx * 0.2));
+    const lastRow = top + (R - 1) * dy;
+    const binTop = lastRow + dy * 0.9 + ballR;
+    const binH = Math.max(160, Math.min(260, W * 0.32));
+    const H = Math.round(binTop + binH + 26);
+    G = { W, H, R, dx, dy, top, pegR, ballR, cx: W / 2, binTop, binBot: binTop + binH };
+    if (+cv.getAttribute('height') !== H) cv.setAttribute('height', H);
+    return G;
+  }
+  // Where a ball sits after r decisions with k rights. Level -1 is the funnel.
+  function posAt(r, k) {
+    if (r < 0) return { x: G.cx, y: G.top - G.dy };
+    if (r >= G.R) return { x: G.cx + (k - G.R / 2) * G.dx, y: G.binTop + G.ballR };
+    return { x: G.cx + (k - r / 2) * G.dx, y: G.top + r * G.dy - G.pegR - G.ballR };
+  }
+
+  function setup() {
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = +cv.getAttribute('height');
+    cv.style.height = h + 'px';
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    return ctx;
+  }
+
+  function draw() {
+    geometry();
+    const ctx = setup(), C = colors(), R = G.R, N = state.total;
+
+    // Funnel
+    ctx.strokeStyle = C.peg; ctx.lineWidth = 2;
+    const fy = G.top - G.dy - G.ballR - 6, fw = Math.max(18, G.dx * 0.9);
+    ctx.beginPath(); ctx.moveTo(G.cx - fw, fy - 14); ctx.lineTo(G.cx - G.ballR - 2, fy + 10);
+    ctx.moveTo(G.cx + fw, fy - 14); ctx.lineTo(G.cx + G.ballR + 2, fy + 10); ctx.stroke(); ctx.lineWidth = 1;
+
+    // Pegs
+    ctx.fillStyle = C.peg;
+    for (let r = 0; r < R; r++) for (let k = 0; k <= r; k++) {
+      const x = G.cx + (k - r / 2) * G.dx, y = G.top + r * G.dy;
+      ctx.beginPath(); ctx.arc(x, y, G.pegR, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // Bins: dividers and baseline
+    const x0 = G.cx - (R / 2 + 0.5) * G.dx, x1 = G.cx + (R / 2 + 0.5) * G.dx;
+    ctx.strokeStyle = C.rule;
+    for (let k = 0; k <= R + 1; k++) { const x = Math.round(x0 + k * G.dx) + 0.5; ctx.beginPath(); ctx.moveTo(x, G.binTop - 4); ctx.lineTo(x, G.binBot); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(x0, G.binBot + 0.5); ctx.lineTo(x1, G.binBot + 0.5); ctx.stroke();
+
+    // Scale for bars and theory
+    let maxC = 0; for (const c of state.counts) maxC = Math.max(maxC, c);
+    let maxP = 0; for (let k = 0; k <= R; k++) maxP = Math.max(maxP, pmf(k));
+    const sd = Math.sqrt(R * state.p * (1 - state.p)), mu = R * state.p;
+    const normPeak = sd > 0 ? 1 / (sd * Math.sqrt(2 * Math.PI)) : 0;
+    const theoryMax = N * Math.max(state.showBin ? maxP : 0, state.showNorm ? Math.min(normPeak, maxP * 1.6) : 0);
+    const ymax = Math.max(1, maxC, theoryMax) * 1.06;
+    const yOf = c => G.binBot - c / ymax * (G.binBot - G.binTop - 6);
+
+    // Bars
+    ctx.fillStyle = C.mean;
+    const gap = Math.max(1, G.dx * 0.12);
+    state.counts.forEach((c, k) => {
+      if (!c) return;
+      const x = x0 + k * G.dx; ctx.fillRect(x + gap / 2 + 0.5, yOf(c), G.dx - gap, G.binBot - yOf(c));
+    });
+
+    // Binomial expected counts: a short thick tick per bin
+    if (state.showBin && N) {
+      ctx.strokeStyle = C.pop; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      for (let k = 0; k <= R; k++) {
+        const y = yOf(N * pmf(k)), x = x0 + k * G.dx;
+        ctx.beginPath(); ctx.moveTo(x + G.dx * 0.18, y); ctx.lineTo(x + G.dx * 0.82, y); ctx.stroke();
+      }
+      ctx.lineWidth = 1; ctx.lineCap = 'butt';
+    }
+    // Normal curve N(np, np(1-p)), bin width 1
+    if (state.showNorm && N && sd > 0) {
+      ctx.save(); ctx.beginPath(); ctx.rect(x0, G.binTop - 8, x1 - x0, G.binBot - G.binTop + 8); ctx.clip();
+      ctx.strokeStyle = C.curve; ctx.lineWidth = 2; ctx.beginPath();
+      const steps = Math.max(200, Math.round(x1 - x0));
+      for (let i = 0; i <= steps; i++) {
+        const v = -0.5 + (R + 1) * i / steps, px = x0 + (v + 0.5) * G.dx;
+        const py = yOf(N * Math.exp(-0.5 * ((v - mu) / sd) ** 2) * normPeak);
+        i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+      }
+      ctx.stroke(); ctx.restore();
+    }
+
+    // Bin labels
+    ctx.fillStyle = C.muted; ctx.font = '11px ' + C.mono; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    const every = G.dx >= 20 ? 1 : G.dx >= 11 ? 2 : 5;
+    for (let k = 0; k <= R; k++) if (k % every === 0 || k === R) ctx.fillText(String(k), x0 + (k + 0.5) * G.dx, G.binBot + 6);
+
+    // Balls in flight
+    ctx.fillStyle = C.pop;
+    for (const b of state.balls) {
+      const a = posAt(b.s - 1, b.kAt[Math.max(0, b.s - 1)] ?? 0), z = posAt(b.s, b.kAt[b.s]);
+      const t = b.t, hop = b.s > 0 && b.s < G.R ? Math.sin(Math.PI * t) * G.dy * 0.28 : 0;
+      const x = a.x + (z.x - a.x) * t, y = a.y + (z.y - a.y) * (b.s === 0 ? t : t * t * 0.5 + t * 0.5) - hop;
+      ctx.beginPath(); ctx.arc(x, y, G.ballR, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  function updateText() {
+    const R = state.R, p = state.p, N = state.total, mu = R * p, sd = Math.sqrt(R * p * (1 - p));
+    $('rowsval').textContent = 'n = ' + R;
+    $('pval').textContent = 'p = ' + p.toFixed(2);
+    $('boardsub').textContent = R + ' row' + (R > 1 ? 's' : '') + ', so ' + (R + 1) + ' bins numbered 0 to ' + R + ' by how many times a ball went right.';
+    $('count').textContent = N.toLocaleString();
+    const flying = state.balls.length + state.queue;
+    $('inflight').textContent = flying.toLocaleString() + ' still falling';
+    const mm = N ? state.sum / N : NaN, sm = N > 1 ? Math.sqrt(Math.max(0, (state.sumsq - N * mm * mm) / (N - 1))) : NaN;
+    $('mm').textContent = fmt(mm); $('mmT').textContent = 'theory: np = ' + fmt(mu);
+    $('sm').textContent = fmt(sm); $('smT').textContent = 'theory: √(np(1−p)) = ' + fmt(sd);
+    $('lgBin').style.display = state.showBin ? '' : 'none';
+    $('lgNorm').style.display = state.showNorm ? '' : 'none';
+    document.querySelectorAll('#quick button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.n === R)));
+    document.querySelectorAll('#speed button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.ms === state.segMs)));
+  }
+
+  function land(k) { state.counts[k]++; state.total++; state.sum += k; state.sumsq += k * k; }
+  function newBall() {
+    const kAt = [0]; let k = 0;
+    for (let r = 0; r < state.R; r++) { if (Math.random() < state.p) k++; kAt.push(k); }
+    // kAt[r] = rights after r decisions; level r uses kAt[r]
+    return { s: 0, t: 0, kAt };
+  }
+
+  function frame(now) {
+    const dt = Math.min(80, now - (state.last || now)); state.last = now;
+    const segMs = state.segMs;
+    // Spawn
+    if (state.queue > 0) {
+      const every = segMs * 0.55;
+      state.spawnAcc = Math.min(state.spawnAcc + dt, every * 1.5);
+      while (state.queue > 0 && state.spawnAcc >= every) { state.spawnAcc -= every; state.queue--; state.balls.push(newBall()); }
+    }
+    // Advance
+    const step = dt / segMs, keep = [];
+    for (const b of state.balls) {
+      b.t += step;
+      while (b.t >= 1) { b.t -= 1; b.s++; if (b.s > state.R) break; }
+      if (b.s > state.R) land(b.kAt[state.R]); else keep.push(b);
+    }
+    state.balls = keep;
+    updateText(); draw();
+    if (state.balls.length || state.queue) requestAnimationFrame(frame);
+    else { state.running = false; state.last = 0; }
+  }
+  function kick() { if (!state.running) { state.running = true; state.last = 0; state.spawnAcc = 1e9; requestAnimationFrame(frame); } }
+
+  function drop(n) {
+    if (reduceMotion) { instant(n); return; }
+    state.queue += n; kick();
+  }
+  function instant(n) {
+    for (let i = 0; i < n; i++) { let k = 0; for (let r = 0; r < state.R; r++) if (Math.random() < state.p) k++; land(k); }
+    updateText(); draw();
+  }
+  function clear() {
+    state.counts = new Array(state.R + 1).fill(0); state.balls = []; state.queue = 0;
+    state.total = 0; state.sum = 0; state.sumsq = 0; updateText(); draw();
+  }
+
+  [1, 3, 6, 12, 20, 30].forEach(n => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.n = n; b.textContent = n;
+    b.addEventListener('click', () => { $('rows').value = n; setRows(n); });
+    $('quick').appendChild(b);
+  });
+  function setRows(n) { if (state.R !== n) { state.R = n; clear(); } }
+  $('rows').addEventListener('input', e => setRows(+e.target.value));
+  $('p').addEventListener('input', e => { state.p = +(+e.target.value).toFixed(2); clear(); });
+  $('b1').addEventListener('click', () => drop(1));
+  $('b10').addEventListener('click', () => drop(10));
+  $('b100').addEventListener('click', () => drop(100));
+  $('b1000').addEventListener('click', () => instant(1000));
+  $('clear').addEventListener('click', clear);
+  document.querySelectorAll('#speed button').forEach(b => b.addEventListener('click', () => { state.segMs = +b.dataset.ms; updateText(); }));
+  $('showBin').addEventListener('change', e => { state.showBin = e.target.checked; updateText(); draw(); });
+  $('showNorm').addEventListener('change', e => { state.showNorm = e.target.checked; updateText(); draw(); });
+
+  let rz; new ResizeObserver(() => { cancelAnimationFrame(rz); rz = requestAnimationFrame(draw); }).observe(cv.parentElement);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+
+  // Open with a pile already started, and a few balls on their way down.
+  clear(); instant(200); updateText(); draw();
+  if (!reduceMotion) drop(12);
+})();
+</script>
+</body>
+</html>
